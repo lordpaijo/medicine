@@ -5,7 +5,7 @@ SITE    ?= test/site
 
 SRC_DIR   := src
 BUILD_DIR := build
-TARGET    := $(BUILD_DIR)/mdserve
+TARGET    := $(BUILD_DIR)/medicine
 
 MODULE_DIRS := $(wildcard $(SRC_DIR)/modules/*)
 SRCS := $(SRC_DIR)/main.c $(wildcard $(SRC_DIR)/modules/*/*.c)

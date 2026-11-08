@@ -1,9 +1,9 @@
 /*
- * mdserve - a tiny HTTP server in C that renders Markdown as HTML.
+ * medicine - a tiny HTTP server in C that renders Markdown as HTML.
  *
- * Build:  gcc -O2 -Wall -Wextra -o mdserve mdserve.c
- * Run:    ./mdserve [-p port] [-b bind-address] [docroot]
- *         ./mdserve -p 8080 ./site
+ * Build:  gcc -O2 -Wall -Wextra -o medicine medicine.c
+ * Run:    ./medicine [-p port] [-b bind-address] [docroot]
+ *         ./medicine -p 8080 ./site
  *
  * What it does:
  *   - *.md / *.markdown files are rendered to HTML with a built-in stylesheet
@@ -16,10 +16,10 @@
  *
  * Markdown supported: headings, paragraphs, **bold**, *italic*, ~~strike~~,
  * `code`, fenced code blocks, links, images (and image links, e.g. badges),
- * main.c - mdserve: a tiny Markdown-rendering HTTP server
+ * main.c - medicine: a tiny Markdown-rendering HTTP server
  *
  * Build:  make
- * Run:    ./mdserve [-p port] [-b bind-address] [docroot]
+ * Run:    ./medicine [-p port] [-b bind-address] [docroot]
  *
  * One forked process per connection, GET/HEAD only, no TLS, no keep-alive.
  * Hobby project: don't put it on the open internet.
@@ -73,7 +73,7 @@ int main(int argc, char **argv) {
     if (bind(srv, (struct sockaddr *)&addr, sizeof addr) < 0) { perror("bind"); return 1; }
     if (listen(srv, 64) < 0) { perror("listen"); return 1; }
 
-    fprintf(stderr, "mdserve: serving %s on http://%s:%d/\n", server_root(), bind_addr, port);
+    fprintf(stderr, "medicine: serving %s on http://%s:%d/\n", server_root(), bind_addr, port);
 
     for (;;) {
         struct sockaddr_in ca;
