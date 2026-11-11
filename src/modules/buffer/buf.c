@@ -64,6 +64,7 @@ void esc_n(Buf *b, const char *s, size_t n) {
 }
 void esc(Buf *b, const char *s) { esc_n(b, s, strlen(s)); }
 
+/* Percent-encode a path for use in an href. */
 void url_enc(Buf *o, const char *s) {
     for (; *s; s++) {
         unsigned char c = (unsigned char)*s;
@@ -71,3 +72,14 @@ void url_enc(Buf *o, const char *s) {
         else buf_printf(o, "%%%02X", c);
     }
 }
+
+int ci_ncmp(const char *a, const char *b, size_t n) {
+    for (; n; n--, a++, b++) {
+        int x = tolower((unsigned char)*a), y = tolower((unsigned char)*b);
+        if (x != y) return x - y;
+        if (!x) return 0;
+    }
+    return 0;
+}
+
+int ci_cmp(const char *a, const char *b) { return ci_ncmp(a, b, (size_t)-1); }
