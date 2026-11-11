@@ -2,12 +2,16 @@
   <img src="https://github.com/lordpaijo/medicine/blob/master/logo.png" alt="Medicine Logo" width="200"/>
 </p>
 
+<p align="center">
+
 ![C/C++](https://img.shields.io/badge/Language-C-blue)
 [![GitHub stars](https://img.shields.io/github/stars/lordpaijo/medicine)](https://github.com/lordpaijo/medicine/stargazers)
 [![GitHub issues](https://img.shields.io/github/issues/lordpaijo/medicine)](https://github.com/lordpaijo/medicine/issues)
 [![GitHub forks](https://img.shields.io/github/forks/lordpaijo/medicine)](https://github.com/lordpaijo/medicine/network/members)
 [![GitHub commits](https://img.shields.io/github/commit-activity/m/lordpaijo/medicine)](https://github.com/lordpaijo/medicine/commits/main)
 [![MIT License](https://img.shields.io/github/license/lordpaijo/medicine)](https://github.com/lordpaijo/medicine/blob/main/LICENSE)
+
+</p>
 
 # medicine
 Medicine (from "MD-C-ine", haha) is a tiny HTTP server in C that renders Markdown as HTML.
