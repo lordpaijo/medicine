@@ -3,9 +3,21 @@ CFLAGS  ?= -O2 -Wall -Wextra
 PORT    ?= 8080
 SITE    ?= test/site
 
+ifeq ($(OS),Windows_NT)
+  WIN := 1
+endif
+ifneq ($(findstring mingw,$(CC)),)
+  WIN := 1
+endif
+ifdef WIN
+  EXE     := .exe
+  LDLIBS  += -lws2_32 -lshell32
+  LDFLAGS += -static          # bundle the runtime so the .exe runs anywhere
+endif
+
 SRC_DIR   := src
 BUILD_DIR := build
-TARGET    := $(BUILD_DIR)/medicine
+TARGET    := $(BUILD_DIR)/medicine$(EXE)
 
 MODULE_DIRS := $(wildcard $(SRC_DIR)/modules/*)
 SRCS := $(SRC_DIR)/main.c $(wildcard $(SRC_DIR)/modules/*/*.c)
