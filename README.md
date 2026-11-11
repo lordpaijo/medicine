@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://github.com/lordpaijo/medicine/blob/master/logo.png" alt="Medicine Logo" width="200"/>
+</p>
+
 # medicine
 Medicine (from "MD-C-ine", haha) is a tiny HTTP server in C that renders Markdown as HTML.
 
@@ -25,4 +29,3 @@ $ ./medicine -p 8080 ./site
 ---
 **One forked process per connection, GET/HEAD only, no TLS, no keep-alive.**
 **Hobby project: don't put it on the open internet.**
-
