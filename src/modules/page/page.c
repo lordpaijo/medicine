@@ -29,18 +29,45 @@ static const char DEFAULT_CSS[] =
     "tr:nth-child(2n){background:var(--code-bg)}\n"
     "input[type=checkbox]{margin-right:.5em}\n"
     "del{color:var(--muted)}\n"
+    "[align=center]{text-align:center}[align=right]{text-align:right}[align=left]{text-align:left}\n"
+    "summary{cursor:pointer}\n"
+    "pre code.hljs{background:transparent;padding:0}\n"
     ".dir-list{list-style:none;padding-left:0}.dir-list li{padding:2px 0}\n";
 
 const char *page_css(void) { return DEFAULT_CSS; }
 
-void page_begin(Buf *o, const char *title, int user_css) {
+#ifndef HLJS_BASE
+  #define HLJS_BASE "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.2"
+#endif
+
+void page_begin(Buf *o, const char *title, int user_css, int highlight) {
     buf_puts(o,
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
         "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>");
     esc(o, title);
-    buf_puts(o, "</title>\n<link rel=\"stylesheet\" href=\"/_mdserve/style.css\">\n");
+    buf_puts(o, "</title>\n");
+    if (highlight)
+        buf_puts(o,
+            "<link rel=\"stylesheet\" media=\"(prefers-color-scheme: light)\" href=\"" HLJS_BASE "/styles/github.min.css\">\n"
+            "<link rel=\"stylesheet\" media=\"(prefers-color-scheme: dark)\" href=\"" HLJS_BASE "/styles/github-dark.min.css\">\n");
+    buf_puts(o, "<link rel=\"stylesheet\" href=\"/_mdserve/style.css\">\n");
     if (user_css) buf_puts(o, "<link rel=\"stylesheet\" href=\"/style.css\">\n");
     buf_puts(o, "</head>\n<body>\n<main class=\"markdown-body\">\n");
 }
 
-void page_end(Buf *o) { buf_puts(o, "</main>\n</body>\n</html>\n"); }
+void page_end(Buf *o, int highlight) {
+    buf_puts(o, "</main>\n");
+    if (highlight)
+        buf_puts(o,
+            "<script src=\"" HLJS_BASE "/highlight.min.js\"></script>\n"
+            "<script>\n"
+            "if (window.hljs) {\n"
+            "  /* only blocks with a language label, like GitHub; unlabeled blocks stay plain */\n"
+            "  hljs.configure({cssSelector: 'pre code[class*=\"language-\"]'});\n"
+            "  hljs.highlightAll();\n"
+            "} else {\n"
+            "  console.warn('medicine: highlight.js did not load from " HLJS_BASE "/highlight.min.js');\n"
+            "}\n"
+            "</script>\n");
+    buf_puts(o, "</body>\n</html>\n");
+}

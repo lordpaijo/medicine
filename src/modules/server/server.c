@@ -11,11 +11,11 @@
 #include "../markdown/markdown.h"
 #include "../page/page.h"
 
-#define MAX_MD          (2 * 1024 * 1024)  /* refuse to render bigger Markdown files */
-#define REQUEST_TIMEOUT 30                 /* seconds allowed to receive a request */
+#define MAX_MD          (2 * 1024 * 1024)
+#define REQUEST_TIMEOUT 30
 
-static char   g_root[PLAT_PATH_MAX];       /* canonical document root, '/' separators */
-static size_t g_rootlen;                   /* strlen(g_root), or 0 when root is "/" */
+static char   g_root[PLAT_PATH_MAX];
+static size_t g_rootlen;
 
 int server_init(const char *docroot) {
     PlatStat st;
@@ -24,7 +24,6 @@ int server_init(const char *docroot) {
         return -1;
     }
     g_rootlen = strlen(g_root);
-    /* "C:/" -> "C:" so that root + "/docs" works; plain "/" becomes length 0 */
     while (g_rootlen > 1 && g_root[g_rootlen - 1] == '/') g_root[--g_rootlen] = 0;
     if (g_rootlen == 1 && g_root[0] == '/') g_rootlen = 0;
     return 0;
@@ -39,15 +38,17 @@ static int user_css_exists(void) {
     return plat_stat(p, &st) == 0 && st.is_file;
 }
 
-static void begin_page(Buf *o, const char *title) { page_begin(o, title, user_css_exists()); }
+static void begin_page(Buf *o, const char *title, int highlight) {
+    page_begin(o, title, user_css_exists(), highlight);
+}
 
 static void send_error(sock_t fd, int code, const char *extra, int head) {
     Buf b = {0};
     char t[64];
     snprintf(t, sizeof t, "%d %s", code, reason_of(code));
-    begin_page(&b, t);
+    begin_page(&b, t, 0);
     buf_printf(&b, "<h1>%d %s</h1>\n<p><a href=\"/\">&larr; Back to the start</a></p>\n", code, reason_of(code));
-    page_end(&b);
+    page_end(&b, 0);
     send_body(fd, code, "text/html; charset=utf-8", extra, b.d, b.len, head);
     free(b.d);
 }
@@ -78,9 +79,11 @@ static void serve_file(sock_t fd, const char *path, int head, int raw) {
         Buf body = {0}, page = {0};
         char title[256];
         md_render(text, &body, title, sizeof title);
-        begin_page(&page, title[0] ? title : basename_of(path));
+        /* only load highlight.js when the page has a labeled code block */
+        int has_code = body.d && strstr(body.d, "<code class=\"language-") != NULL;
+        begin_page(&page, title[0] ? title : basename_of(path), has_code);
         if (body.d) buf_putn(&page, body.d, body.len);
-        page_end(&page);
+        page_end(&page, has_code);
         send_body(fd, 200, "text/html; charset=utf-8", NULL, page.d, page.len, head);
         free(text); free(body.d); free(page.d);
         return;
@@ -124,7 +127,7 @@ static void serve_dir(sock_t fd, const char *path, const char *urlpath, int head
     Buf b = {0};
     char title[PLAT_PATH_MAX];
     snprintf(title, sizeof title, "Index of %s", urlpath);
-    begin_page(&b, title);
+    begin_page(&b, title, 0);
     buf_puts(&b, "<h1>Index of ");
     esc(&b, urlpath);
     buf_puts(&b, "</h1>\n<ul class=\"dir-list\">\n");
@@ -141,7 +144,7 @@ static void serve_dir(sock_t fd, const char *path, const char *urlpath, int head
     }
     free(E.v);
     buf_puts(&b, "</ul>\n");
-    page_end(&b);
+    page_end(&b, 0);
     send_body(fd, 200, "text/html; charset=utf-8", NULL, b.d, b.len, head);
     free(b.d);
 }
@@ -165,21 +168,18 @@ static int url_decode(char *s) {
     return 0;
 }
 
-/* Map a URL path to a real file inside the docroot, trying /x, /x.md, /x.html. */
 static int resolve(const char *urlpath, char *out) {
     static const char *suffix[] = {"", ".md", ".html", NULL};
     char full[PLAT_PATH_MAX * 2];
     for (int i = 0; suffix[i]; i++) {
         int w = snprintf(full, sizeof full, "%.*s%s%s", (int)g_rootlen, g_root, urlpath, suffix[i]);
         if (w < 0 || (size_t)w >= sizeof full) return -1;
-        if (plat_realpath(full, out))              /* resolves symlinks, so ".." tricks fail here */
+        if (plat_realpath(full, out))
             return plat_inside(out, g_root, g_rootlen) ? 0 : -1;
     }
     return -1;
 }
 
-/* Decide what to send for one request. `target` is the path (query already
- * removed, still percent-encoded); `orig` is an untouched copy of it. */
 static void route(sock_t fd, char *target, const char *orig, int head, int raw) {
     if (strcmp(target, "/_mdserve/style.css") == 0) {
         send_body(fd, 200, "text/css; charset=utf-8", NULL, page_css(), strlen(page_css()), head);
@@ -188,8 +188,6 @@ static void route(sock_t fd, char *target, const char *orig, int head, int raw) 
 
     if (url_decode(target) < 0) { send_error(fd, 400, NULL, head); return; }
 
-    /* "/." catches ".." and dotfiles (.git, .env); plat_path_unsafe adds the
-     * Windows-only dangers (backslashes, "C:", NUL, COM1, ...). */
     if (strstr(target, "/.") != NULL || plat_path_unsafe(target)) {
         send_error(fd, 403, NULL, head);
         return;
@@ -201,10 +199,9 @@ static void route(sock_t fd, char *target, const char *orig, int head, int raw) 
 
     if (!st.is_dir) { serve_file(fd, path, head, raw); return; }
 
-    /* directory without a trailing slash: redirect, so relative links work */
     if (orig[strlen(orig) - 1] != '/') {
         const char *o = orig;
-        while (o[1] == '/') o++;                   /* avoid //host open redirects */
+        while (o[1] == '/') o++;
         char loc[2200];
         snprintf(loc, sizeof loc, "Location: %s/\r\n", o);
         send_body(fd, 301, "text/plain", loc, "", 0, head);
@@ -231,7 +228,7 @@ void server_handle(sock_t fd, const char *ip) {
         got += (size_t)r;
         req[got] = 0;
         if (strstr(req, "\r\n\r\n") || strstr(req, "\n\n")) break;
-        if (time(NULL) - t0 > REQUEST_TIMEOUT) break;   /* slow-trickle clients */
+        if (time(NULL) - t0 > REQUEST_TIMEOUT) break;
     }
     if (!got) return;
     req[got] = 0;
