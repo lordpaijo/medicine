@@ -15,6 +15,7 @@
     </a>
 </div>
 
+
 <b>A lightweight C++ math library for exploring computational mathematics while testing the limits of the author's C++ skills (and sanity).</b><br/>
 
 <i>**I + METH** – Because I'm high on math equations like a guy high on meth.</i><br/>
@@ -32,7 +33,6 @@
 ## Quick Start
 
 ### Installation
-
 ```sh
 git clone https://github.com/lordpaijo/imeth.cpp.git imeth
 cd imeth
@@ -43,7 +43,6 @@ sudo make install
 ```
 
 ### Basic Usage
-
 ```cpp
 #include <imeth/operation/arithmetic.hpp>
 #include <imeth/linear/algebra.hpp>
@@ -73,4 +72,4 @@ See the [LICENSE](https://github.com/lordpaijo/imeth.cpp/blob/main/LICENSE) file
 
 ---
 
-_Remember: Stay high on math, not meth._
+*Remember: Stay high on math, not meth.*

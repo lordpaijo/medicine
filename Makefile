@@ -19,17 +19,12 @@ SRC_DIR   := src
 BUILD_DIR := build
 TARGET    := $(BUILD_DIR)/medicine$(EXE)
 
-# ---- find the sources ----
 MODULE_DIRS := $(wildcard $(SRC_DIR)/modules/*)
 SRCS := $(SRC_DIR)/main.c $(wildcard $(SRC_DIR)/modules/*/*.c)
 OBJS := $(SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 DEPS := $(OBJS:.o=.d)
 
-override CPPFLAGS += $(addprefix -I,$(MODULE_DIRS)) -MMD -MP
-
-ifdef HLJS_BASE
-  override CPPFLAGS += -DHLJS_BASE='"$(HLJS_BASE)"'
-endif
+CPPFLAGS += $(addprefix -I,$(MODULE_DIRS)) -MMD -MP
 
 ifeq ($(V),1)
   Q :=

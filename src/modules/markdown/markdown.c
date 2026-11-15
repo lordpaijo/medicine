@@ -1,26 +1,17 @@
-/* markdown.c - Markdown -> HTML fragment renderer
- *
- * Supported: headings, paragraphs, **bold**, *italic*, ~~strike~~, `code`,
- * fenced code blocks, links, images (and image links), autolinks, ordered /
- * unordered / nested lists, task lists, blockquotes, horizontal rules, pipe
- * tables, HTML comments (dropped), backslash escapes. A safe subset of raw HTML
- * (allowlisted tags and attributes) passes through; the rest is escaped.
- */
 #define _GNU_SOURCE
 #include "markdown.h"
-#include "../platform/compat.h"
 
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
-#define MAXC      32
-#define MAX_DEPTH 24
+#define MAXC      32   
+#define MAX_DEPTH 24  
 
-static PLAT_TLS char g_title[256];
+static char g_title[256];   
 static void render_inline(Buf *o, const char *s, size_t n, int in_link);
-
 static long find_code_close(const char *s, size_t n, size_t from, size_t r) {
     for (size_t j = from; j < n;) {
         if (s[j] == '`') {
@@ -87,23 +78,10 @@ static long find_closer(const char *s, size_t n, size_t from, char c, size_t r) 
 }
 
 static void emit_url(Buf *o, const char *u, size_t n, int is_image) {
-    while (n && (unsigned char)*u <= ' ') { u++; n--; }
-    while (n && (unsigned char)u[n - 1] <= ' ') n--;
-    char *s = xrealloc(NULL, n * 3 + 1);
-    size_t w = 0;
-    for (size_t i = 0; i < n; i++) {
-        unsigned char c = (unsigned char)u[i];
-        if (c == ' ') { memcpy(s + w, "%20", 3); w += 3; }
-        else if (c < ' ' || c == 0x7f) continue;
-        else s[w++] = (char)c;
-    }
-    s[w] = 0;
-    if (ci_ncmp(s, "javascript:", 11) == 0 || ci_ncmp(s, "vbscript:", 9) == 0 ||
-        (!is_image && ci_ncmp(s, "data:", 5) == 0)) {
-        buf_putc(o, '#');
-        free(s);
-        return;
-    }
+    while (n && isspace((unsigned char)*u)) { u++; n--; }
+    if (n >= 11 && strncasecmp(u, "javascript:", 11) == 0) { buf_putc(o, '#'); return; }
+    if (n >= 5 && strncasecmp(u, "data:", 5) == 0 && !is_image) { buf_putc(o, '#'); return; }
+    char *s = xstrndup(u, n);
     char *blob;
     if (is_image && strncmp(s, "https://github.com/", 19) == 0 && (blob = strstr(s, "/blob/"))) {
         *blob = 0;
@@ -172,194 +150,9 @@ static int try_link(Buf *o, const char *s, size_t n, size_t lb, int image, size_
 }
 
 static size_t scheme_len(const char *s, size_t n) {
-    if (n >= 8 && ci_ncmp(s, "https://", 8) == 0) return 8;
-    if (n >= 7 && ci_ncmp(s, "http://", 7) == 0)  return 7;
+    if (n >= 8 && strncasecmp(s, "https://", 8) == 0) return 8;
+    if (n >= 7 && strncasecmp(s, "http://", 7) == 0)  return 7;
     return 0;
-}
-static const char *const BLOCK_TAGS[] = {
-    "p", "div", "details", "summary", "table", "thead", "tbody", "tfoot", "tr", "td", "th",
-    "center", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "blockquote", "picture", "hr", NULL};
-static const char *const INLINE_TAGS[] = {
-    "a", "b", "i", "em", "strong", "code", "kbd", "sub", "sup", "small", "span", "br", "img",
-    "source", "del", "ins", NULL};
-static const char *const VOID_TAGS[] = {"br", "hr", "img", "source", NULL};
-
-static int tag_in(const char *const *list, const char *name, size_t n) {
-    for (; *list; list++)
-        if (strlen(*list) == n && ci_ncmp(*list, name, n) == 0) return 1;
-    return 0;
-}
-
-static int is_name(const char *s, size_t n, const char *lit) {
-    return strlen(lit) == n && ci_ncmp(s, lit, n) == 0;
-}
-
-static int is_dim(const char *v, size_t n) {            /* 200   50%   120px */
-    size_t i = 0;
-    while (i < n && isdigit((unsigned char)v[i])) i++;
-    if (i == 0 || i > 5) return 0;
-    return i == n || (i + 1 == n && v[i] == '%') || (i + 2 == n && ci_ncmp(v + i, "px", 2) == 0);
-}
-
-static int is_digits(const char *v, size_t n, size_t max) {
-    if (n == 0 || n > max) return 0;
-    for (size_t i = 0; i < n; i++) if (!isdigit((unsigned char)v[i])) return 0;
-    return 1;
-}
-
-static void emit_srcset(Buf *o, const char *v, size_t n) {
-    size_t i = 0;
-    int first = 1;
-    while (i < n) {
-        while (i < n && (isspace((unsigned char)v[i]) || v[i] == ',')) i++;
-        size_t us = i;
-        while (i < n && !isspace((unsigned char)v[i]) && v[i] != ',') i++;
-        if (i == us) break;
-        size_t ue = i;
-        while (i < n && isspace((unsigned char)v[i])) i++;
-        size_t ds = i;
-        while (i < n && v[i] != ',' && !isspace((unsigned char)v[i])) i++;
-        size_t de = i;
-        if (!first) buf_puts(o, ", ");
-        first = 0;
-        emit_url(o, v + us, ue - us, 1);
-        if (de > ds + 1 && (v[de - 1] == 'w' || v[de - 1] == 'x')) {
-            int ok = 1;
-            for (size_t k = ds; k + 1 < de; k++)
-                if (!isdigit((unsigned char)v[k]) && v[k] != '.') ok = 0;
-            if (ok) { buf_putc(o, ' '); buf_putn(o, v + ds, de - ds); }
-        }
-    }
-}
-
-static void emit_attr(Buf *o, const char *tag, size_t tn, const char *an, size_t al,
-                      const char *v, size_t vl, int has) {
-    int isa = is_name(tag, tn, "a"), isimg = is_name(tag, tn, "img"), issrc = is_name(tag, tn, "source");
-    int iscell = is_name(tag, tn, "td") || is_name(tag, tn, "th");
-
-    if (is_name(an, al, "open")) { if (is_name(tag, tn, "details")) buf_puts(o, " open"); return; }
-    if (!has) return;
-
-    if (is_name(an, al, "href") && isa) {
-        buf_puts(o, " href=\""); emit_url(o, v, vl, 0); buf_putc(o, '"');
-    } else if (is_name(an, al, "src") && isimg) {
-        buf_puts(o, " src=\""); emit_url(o, v, vl, 1); buf_putc(o, '"');
-    } else if (is_name(an, al, "srcset") && (isimg || issrc)) {
-        buf_puts(o, " srcset=\""); emit_srcset(o, v, vl); buf_putc(o, '"');
-    } else if (is_name(an, al, "media") && issrc) {
-        int ok = 1;
-        for (size_t k = 0; k < vl; k++)
-            if (!isalnum((unsigned char)v[k]) && !strchr(" ():,.<>=-", v[k])) ok = 0;
-        if (ok) { buf_puts(o, " media=\""); esc_n(o, v, vl); buf_putc(o, '"'); }
-    } else if (is_name(an, al, "alt")) {
-        buf_puts(o, " alt=\""); esc_n(o, v, vl); buf_putc(o, '"');
-    } else if (is_name(an, al, "title")) {
-        buf_puts(o, " title=\""); esc_n(o, v, vl); buf_putc(o, '"');
-    } else if (is_name(an, al, "align")) {
-        if (is_name(v, vl, "left") || is_name(v, vl, "right") || is_name(v, vl, "center") || is_name(v, vl, "justify")) {
-            buf_puts(o, " align=\""); buf_putn(o, v, vl); buf_putc(o, '"');
-        }
-    } else if (is_name(an, al, "width") && is_dim(v, vl)) {
-        buf_puts(o, " width=\""); buf_putn(o, v, vl); buf_putc(o, '"');
-    } else if (is_name(an, al, "height") && is_dim(v, vl)) {
-        buf_puts(o, " height=\""); buf_putn(o, v, vl); buf_putc(o, '"');
-    } else if (iscell && is_name(an, al, "colspan") && is_digits(v, vl, 3)) {
-        buf_puts(o, " colspan=\""); buf_putn(o, v, vl); buf_putc(o, '"');
-    } else if (iscell && is_name(an, al, "rowspan") && is_digits(v, vl, 3)) {
-        buf_puts(o, " rowspan=\""); buf_putn(o, v, vl); buf_putc(o, '"');
-    }
-}
-
-static int try_html_tag(Buf *o, const char *s, size_t n, size_t i, size_t *next) {
-    size_t j = i + 1;
-    int closing = 0;
-    if (j < n && s[j] == '/') { closing = 1; j++; }
-    size_t ns = j;
-    while (j < n && isalnum((unsigned char)s[j])) j++;
-    size_t nl = j - ns;
-    if (nl == 0 || !isalpha((unsigned char)s[ns])) return 0;
-    const char *tag = s + ns;
-    if (!tag_in(BLOCK_TAGS, tag, nl) && !tag_in(INLINE_TAGS, tag, nl)) return 0;
-    int isvoid = tag_in(VOID_TAGS, tag, nl);
-
-    if (closing) {
-        while (j < n && isspace((unsigned char)s[j])) j++;
-        if (j >= n || s[j] != '>') return 0;
-        if (!isvoid) {
-            buf_puts(o, "</");
-            for (size_t k = 0; k < nl; k++) buf_putc(o, (char)tolower((unsigned char)tag[k]));
-            buf_putc(o, '>');
-        }
-        *next = j + 1;
-        return 1;
-    }
-
-    Buf attrs = {0};
-    for (;;) {
-        while (j < n && isspace((unsigned char)s[j])) j++;
-        if (j >= n || j - i > 4096) { free(attrs.d); return 0; }
-        if (s[j] == '>') { j++; break; }
-        if (s[j] == '/' && j + 1 < n && s[j + 1] == '>') { j += 2; break; }
-
-        size_t as = j;
-        while (j < n && (isalnum((unsigned char)s[j]) || s[j] == '-' || s[j] == '_' || s[j] == ':')) j++;
-        size_t al = j - as;
-        if (al == 0) { free(attrs.d); return 0; }
-
-        const char *v = NULL;
-        size_t vl = 0;
-        int has = 0;
-        size_t k = j;
-        while (k < n && isspace((unsigned char)s[k])) k++;
-        if (k < n && s[k] == '=') {
-            k++;
-            while (k < n && isspace((unsigned char)s[k])) k++;
-            if (k >= n) { free(attrs.d); return 0; }
-            if (s[k] == '"' || s[k] == '\'') {
-                char q = s[k];
-                size_t vs = k + 1, e = vs;
-                while (e < n && s[e] != q && e - i <= 4096) e++;
-                if (e >= n || e - i > 4096) { free(attrs.d); return 0; }
-                v = s + vs; vl = e - vs; k = e + 1;
-            } else {
-                size_t vs = k;
-                while (k < n && !isspace((unsigned char)s[k]) && !strchr("\"'=<>`", s[k])) k++;
-                if (k == vs) { free(attrs.d); return 0; }
-                v = s + vs; vl = k - vs;
-            }
-            has = 1;
-            j = k;
-        }
-        emit_attr(&attrs, tag, nl, s + as, al, v, vl, has);
-    }
-
-    buf_putc(o, '<');
-    for (size_t k = 0; k < nl; k++) buf_putc(o, (char)tolower((unsigned char)tag[k]));
-    if (attrs.d) buf_putn(o, attrs.d, attrs.len);
-    if (is_name(tag, nl, "img")) buf_puts(o, " loading=\"lazy\"");
-    buf_putc(o, '>');
-    free(attrs.d);
-    *next = j;
-    return 1;
-}
-
-static void html_text(Buf *o, const char *s, size_t n) {
-    size_t i = 0;
-    while (i < n) {
-        if (s[i] == '<') {
-            size_t nx;
-            if (try_html_tag(o, s, n, i, &nx)) i = nx;
-            else { buf_puts(o, "&lt;"); i++; }
-        } else if (s[i] == '&') {
-            size_t k = i + 1;
-            while (k < n && k - i < 10 && (isalnum((unsigned char)s[k]) || s[k] == '#')) k++;
-            if (k < n && s[k] == ';' && k > i + 1) { buf_putn(o, s + i, k - i + 1); i = k + 1; }
-            else { buf_puts(o, "&amp;"); i++; }
-        } else {
-            esc_n(o, s + i, 1);
-            i++;
-        }
-    }
 }
 
 static void render_inline_core(Buf *o, const char *s, size_t n, int in_link) {
@@ -433,7 +226,7 @@ static void render_inline_core(Buf *o, const char *s, size_t n, int in_link) {
             size_t k = i + 1;
             while (k < n && s[k] != '>' && s[k] != '<' && !isspace((unsigned char)s[k])) k++;
             if (k < n && s[k] == '>' && !in_link &&
-                (scheme_len(s + i + 1, n - i - 1) || (k - i > 8 && ci_ncmp(s + i + 1, "mailto:", 7) == 0))) {
+                (scheme_len(s + i + 1, n - i - 1) || (k - i > 8 && strncasecmp(s + i + 1, "mailto:", 7) == 0))) {
                 buf_puts(o, "<a href=\"");
                 emit_url(o, s + i + 1, k - i - 1, 0);
                 buf_puts(o, "\">");
@@ -441,9 +234,8 @@ static void render_inline_core(Buf *o, const char *s, size_t n, int in_link) {
                 buf_puts(o, "</a>");
                 i = k + 1;
             } else {
-                size_t nx;
-                if (try_html_tag(o, s, n, i, &nx)) i = nx;
-                else { buf_puts(o, "&lt;"); i++; }
+                buf_puts(o, "&lt;");
+                i++;
             }
             break;
         }
@@ -494,7 +286,7 @@ static void render_inline_core(Buf *o, const char *s, size_t n, int in_link) {
 }
 
 static void render_inline(Buf *o, const char *s, size_t n, int in_link) {
-    static PLAT_TLS int depth;
+    static int depth;
     if (depth >= MAX_DEPTH) { esc_n(o, s, n); return; }
     depth++;
     render_inline_core(o, s, n, in_link);
@@ -627,25 +419,11 @@ static int list_marker(const char *l, int *ordered, int *num, int *mw, const cha
     return 1;
 }
 
-static int html_block_start(const char *l) {
-    if (indent_of(l) > 3) return 0;
-    const char *p = skip_ws(l);
-    if (*p != '<') return 0;
-    p++;
-    if (*p == '/') p++;
-    const char *ns = p;
-    while (isalnum((unsigned char)*p)) p++;
-    size_t nl = (size_t)(p - ns);
-    if (nl == 0 || !tag_in(BLOCK_TAGS, ns, nl)) return 0;
-    return *p == '>' || *p == '/' || *p == ' ' || *p == '\t' || *p == 0;
-}
-
 static int starts_block(const char *l) {
     const char *t, *info, *c;
     char ch;
     int len, o, n, mw;
     if (heading_level(l, &t) || fence_open(l, &ch, &len, &info) || is_hr(l) || is_quote(l)) return 1;
-    if (html_block_start(l)) return 1;
     if (list_marker(l, &o, &n, &mw, &c) && (!o || n == 1) && !is_blank(c)) return 1;
     return 0;
 }
@@ -725,25 +503,11 @@ static void render_blocks(Buf *o, Lines *L, int tight, int depth) {
             i = j < n ? j + 1 : j;
             continue;
         }
-        
+
         if (strncmp(skip_ws(l), "<!--", 4) == 0) {
             int j = i;
             while (j < n && !strstr(L->v[j], "-->")) j++;
             i = j < n ? j + 1 : j;
-            continue;
-        }
-
-        if (html_block_start(l)) {
-            Buf hb = {0};
-            int j = i;
-            while (j < n && !is_blank(L->v[j])) {
-                buf_puts(&hb, L->v[j]);
-                buf_putc(&hb, '\n');
-                j++;
-            }
-            html_text(o, hb.d ? hb.d : "", hb.len);
-            free(hb.d);
-            i = j;
             continue;
         }
 
@@ -955,7 +719,7 @@ static void render_blocks(Buf *o, Lines *L, int tight, int depth) {
 
 void md_render(const char *text, Buf *out, char *title, size_t title_sz) {
     g_title[0] = 0;
-    if (strncmp(text, "\xEF\xBB\xBF", 3) == 0) text += 3;   /* skip UTF-8 BOM */
+    if (strncmp(text, "\xEF\xBB\xBF", 3) == 0) text += 3;   
     Lines L = split_lines(text);
     render_blocks(out, &L, 0, 0);
     lines_free(&L);
