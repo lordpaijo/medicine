@@ -19,13 +19,13 @@ Medicine (from "MD-C-ine", haha) is a tiny HTTP server in C that renders Markdow
 
 Build:
 
-```sh
+```bash
 make
 ```
 
 Run:
 
-```sh
+```bash1
 medicine [-p port] [-b bind-address] [docroot]
 medicine -p 8080 ./site
 ```
