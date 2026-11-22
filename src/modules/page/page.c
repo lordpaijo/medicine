@@ -36,38 +36,44 @@ static const char DEFAULT_CSS[] =
 
 const char *page_css(void) { return DEFAULT_CSS; }
 
-#ifndef HLJS_BASE
-  #define HLJS_BASE "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.2"
-#endif
-
-void page_begin(Buf *o, const char *title, int user_css, int highlight) {
+void page_begin(Buf *o, const char *title, int user_css, const char *hljs_base) {
     buf_puts(o,
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
         "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>");
     esc(o, title);
     buf_puts(o, "</title>\n");
-    if (highlight)
-        buf_puts(o,
-            "<link rel=\"stylesheet\" media=\"(prefers-color-scheme: light)\" href=\"" HLJS_BASE "/styles/github.min.css\">\n"
-            "<link rel=\"stylesheet\" media=\"(prefers-color-scheme: dark)\" href=\"" HLJS_BASE "/styles/github-dark.min.css\">\n");
+    /* The highlight.js theme goes BEFORE our stylesheet so our rules win ties. */
+    if (hljs_base) {
+        buf_puts(o, "<link rel=\"stylesheet\" media=\"(prefers-color-scheme: light)\" href=\"");
+        esc(o, hljs_base);
+        buf_puts(o, "/styles/github.min.css\">\n<link rel=\"stylesheet\" media=\"(prefers-color-scheme: dark)\" href=\"");
+        esc(o, hljs_base);
+        buf_puts(o, "/styles/github-dark.min.css\">\n");
+    }
     buf_puts(o, "<link rel=\"stylesheet\" href=\"/_mdserve/style.css\">\n");
     if (user_css) buf_puts(o, "<link rel=\"stylesheet\" href=\"/style.css\">\n");
     buf_puts(o, "</head>\n<body>\n<main class=\"markdown-body\">\n");
 }
 
-void page_end(Buf *o, int highlight) {
+void page_end(Buf *o, const char *hljs_base) {
     buf_puts(o, "</main>\n");
-    if (highlight)
+    if (hljs_base) {
+        buf_puts(o, "<script src=\"");
+        esc(o, hljs_base);
         buf_puts(o,
-            "<script src=\"" HLJS_BASE "/highlight.min.js\"></script>\n"
+            "/highlight.min.js\"></script>\n"
             "<script>\n"
             "if (window.hljs) {\n"
             "  /* only blocks with a language label, like GitHub; unlabeled blocks stay plain */\n"
             "  hljs.configure({cssSelector: 'pre code[class*=\"language-\"]'});\n"
             "  hljs.highlightAll();\n"
             "} else {\n"
-            "  console.warn('medicine: highlight.js did not load from " HLJS_BASE "/highlight.min.js');\n"
+            "  console.warn('medicine: highlight.js did not load from ");
+        esc(o, hljs_base);
+        buf_puts(o,
+            "/highlight.min.js');\n"
             "}\n"
             "</script>\n");
+    }
     buf_puts(o, "</body>\n</html>\n");
 }
